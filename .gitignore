@@ -107,3 +107,4 @@ ENV/
 
 # VS Code
 .vscode/
+graph.dot

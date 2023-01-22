@@ -6,7 +6,7 @@ import cv2
 
 
 # Find file relative to the location of this code files
-default_onnx_path = f'{os.path.dirname(__file__)}/centerface.onnx'
+default_onnx_path = f"{os.path.dirname(__file__)}/centerface.onnx"
 
 
 def ensure_rgb(img: np.ndarray) -> np.ndarray:
@@ -19,29 +19,38 @@ def ensure_rgb(img: np.ndarray) -> np.ndarray:
 
 
 class CenterFace:
-    def __init__(self, onnx_path=None, in_shape=None, backend='auto'):
+    """
+    specifically mapped to the CenterFace ONNX model.
+    * the model supports scaling dimensions (as long as its aligned to 32 bits)
+    * batch size is always 1.
+    * there are 4 features produced from the model, referenced by
+    """
+
+    def __init__(self, onnx_path=None, in_shape=None, backend="auto"):
         self.in_shape = in_shape
-        self.onnx_input_name = 'input.1'
-        self.onnx_output_names = ['537', '538', '539', '540']
+        self.onnx_input_name = "input.1"
+        self.onnx_output_names = ["537", "538", "539", "540"]
 
         if onnx_path is None:
             onnx_path = default_onnx_path
 
-        if backend == 'auto':
+        if backend == "auto":
             try:
                 import onnx
                 import onnxruntime
-                backend = 'onnxrt'
+
+                backend = "onnxrt"
             except:
                 # TODO: Warn when using a --verbose flag
                 # print('Failed to import onnx or onnxruntime. Falling back to slower OpenCV backend.')
-                backend = 'opencv'
+                backend = "opencv"
         self.backend = backend
 
+        if self.backend == "opencv":
+            # load up model
+            self.net: cv2.dnn.Net = cv2.dnn.readNetFromONNX(onnx_path)
 
-        if self.backend == 'opencv':
-            self.net = cv2.dnn.readNetFromONNX(onnx_path)
-        elif self.backend == 'onnxrt':
+        elif self.backend == "onnxrt":
             import onnx
             import onnxruntime
 
@@ -50,10 +59,13 @@ class CenterFace:
 
             static_model = onnx.load(onnx_path)
             dyn_model = self.dynamicize_shapes(static_model)
-            self.sess = onnxruntime.InferenceSession(dyn_model.SerializeToString(), providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            self.sess = onnxruntime.InferenceSession(
+                dyn_model.SerializeToString(),
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            )
 
             preferred_provider = self.sess.get_providers()[0]
-            preferred_device = 'GPU' if preferred_provider.startswith('CUDA') else 'CPU'
+            preferred_device = "GPU" if preferred_provider.startswith("CUDA") else "CPU"
             # print(f'Running on {preferred_device}.')
 
     @staticmethod
@@ -67,41 +79,76 @@ class CenterFace:
         for node in static_model.graph.output:
             dims = [d.dim_value for d in node.type.tensor_type.shape.dim]
             output_dims[node.name] = dims
-        input_dims.update({
-            'input.1': ['B', 3, 'H', 'W']  # RGB input image
-        })
-        output_dims.update({
-            '537': ['B', 1, 'h', 'w'],  # heatmap
-            '538': ['B', 2, 'h', 'w'],  # scale
-            '539': ['B', 2, 'h', 'w'],  # offset
-            '540': ['B', 10, 'h', 'w']  # landmarks
-        })
+        input_dims.update({"input.1": ["B", 3, "H", "W"]})  # RGB input image
+        output_dims.update(
+            {
+                "537": ["B", 1, "h", "w"],  # heatmap
+                "538": ["B", 2, "h", "w"],  # scale
+                "539": ["B", 2, "h", "w"],  # offset
+                "540": ["B", 10, "h", "w"],  # landmarks
+            }
+        )
+        print("updated input", input_dims["input.1"])
         dyn_model = update_inputs_outputs_dims(static_model, input_dims, output_dims)
         return dyn_model
 
     def __call__(self, img, threshold=0.5):
+        """
+        returns detected areas & ? lms
+        """
         img = ensure_rgb(img)
         self.orig_shape = img.shape[:2]
         if self.in_shape is None:
             self.in_shape = self.orig_shape[::-1]
-        if not hasattr(self, 'h_new'):  # First call, need to compute sizes
-            self.w_new, self.h_new, self.scale_w, self.scale_h = self.transform(self.in_shape)
+        if not hasattr(self, "h_new"):  # First call, need to compute sizes
+            self.w_new, self.h_new, self.scale_w, self.scale_h = self.transform(
+                self.in_shape
+            )
 
         blob = cv2.dnn.blobFromImage(
-            img, scalefactor=1.0, size=(self.w_new, self.h_new),
-            mean=(0, 0, 0), swapRB=False, crop=False
+            img,
+            scalefactor=1.0,
+            size=(self.w_new, self.h_new),
+            mean=(0, 0, 0),
+            swapRB=False,
+            crop=False,
         )
-        if self.backend == 'opencv':
+        """blob is numpy.ndarray, (1,3,736,1280)"""
+        # print(blob.shape)
+        if self.backend == "opencv":
+            """model gets image fixed to multiples of 32"""
             self.net.setInput(blob)
+            # output_name = pick specific output layer
+            # Q: what layers in an onnx file?
+            # Q: what returned from layer?
             heatmap, scale, offset, lms = self.net.forward(self.onnx_output_names)
-        elif self.backend == 'onnxrt':
-            heatmap, scale, offset, lms = self.sess.run(self.onnx_output_names, {self.onnx_input_name: blob})
+
+        elif self.backend == "onnxrt":
+            heatmap, scale, offset, lms = self.sess.run(
+                self.onnx_output_names, {self.onnx_input_name: blob}
+            )
         else:
-            raise RuntimeError(f'Unknown backend {self.backend}')
-        dets, lms = self.decode(heatmap, scale, offset, lms, (self.h_new, self.w_new), threshold=threshold)
+            raise RuntimeError(f"Unknown backend {self.backend}")
+
+        # all are numpy.ndarray
+        # print("heatmap", heatmap.shape)
+        # print("scale", scale.shape)
+        # print("offset", offset.shape)
+        # print("lms", lms.shape)
+
+        dets, lms = self.decode(
+            heatmap, scale, offset, lms, (self.h_new, self.w_new), threshold=threshold
+        )
+
         if len(dets) > 0:
-            dets[:, 0:4:2], dets[:, 1:4:2] = dets[:, 0:4:2] / self.scale_w, dets[:, 1:4:2] / self.scale_h
-            lms[:, 0:10:2], lms[:, 1:10:2] = lms[:, 0:10:2] / self.scale_w, lms[:, 1:10:2] / self.scale_h
+            dets[:, 0:4:2], dets[:, 1:4:2] = (
+                dets[:, 0:4:2] / self.scale_w,
+                dets[:, 1:4:2] / self.scale_h,
+            )
+            lms[:, 0:10:2], lms[:, 1:10:2] = (
+                lms[:, 0:10:2] / self.scale_w,
+                lms[:, 1:10:2] / self.scale_h,
+            )
         else:
             dets = np.empty(shape=[0, 5], dtype=np.float32)
             lms = np.empty(shape=[0, 10], dtype=np.float32)
@@ -109,50 +156,86 @@ class CenterFace:
         return dets, lms
 
     def transform(self, in_shape):
+        """
+        Make spatial dims divisible by 32
+        """
         h_orig, w_orig = self.orig_shape
         w_new, h_new = in_shape
-        # Make spatial dims divisible by 32
+
         w_new, h_new = int(np.ceil(w_new / 32) * 32), int(np.ceil(h_new / 32) * 32)
         scale_w, scale_h = w_new / w_orig, h_new / h_orig
+        # print("transforming", self.orig_shape, w_new, h_new)
         return w_new, h_new, scale_w, scale_h
 
     def decode(self, heatmap, scale, offset, landmark, size, threshold=0.1):
-        heatmap = np.squeeze(heatmap)
+        """
+        use the models inference results (4 feature maps; heatmap, scale, offset, landmark)
+
+        there are two(2) scale values
+        there are two(2) offset values
+        """
+        heatmap = np.squeeze(heatmap)  # shape (184, 320)
+        # print("heatmap squeezed", heatmap.shape)
         scale0, scale1 = scale[0, 0, :, :], scale[0, 1, :, :]
         offset0, offset1 = offset[0, 0, :, :], offset[0, 1, :, :]
-        c0, c1 = np.where(heatmap > threshold)
+        # x = np.where(heatmap > threshold)
+        # print("x", len(x))
+        c0, c1 = np.where(heatmap > threshold)  # non-zero indeces (dim1, dim2)
+
         boxes, lms = [], []
-        if len(c0) > 0:
+
+        if len(c0) > 0:  # if there is a non-zero index
             for i in range(len(c0)):
-                s0, s1 = np.exp(scale0[c0[i], c1[i]]) * 4, np.exp(scale1[c0[i], c1[i]]) * 4
+                # multiple of 4, based on model's Input:Output reduction
+                s0, s1 = (
+                    np.exp(scale0[c0[i], c1[i]]) * 4,
+                    np.exp(scale1[c0[i], c1[i]]) * 4,
+                )
                 o0, o1 = offset0[c0[i], c1[i]], offset1[c0[i], c1[i]]
                 s = heatmap[c0[i], c1[i]]
-                x1, y1 = max(0, (c1[i] + o1 + 0.5) * 4 - s1 / 2), max(0, (c0[i] + o0 + 0.5) * 4 - s0 / 2)
+                x1, y1 = max(0, (c1[i] + o1 + 0.5) * 4 - s1 / 2), max(
+                    0, (c0[i] + o0 + 0.5) * 4 - s0 / 2
+                )
                 x1, y1 = min(x1, size[1]), min(y1, size[0])
+
+                # bounding box identified
                 boxes.append([x1, y1, min(x1 + s1, size[1]), min(y1 + s0, size[0]), s])
+
                 lm = []
                 for j in range(5):
                     lm.append(landmark[0, j * 2 + 1, c0[i], c1[i]] * s1 + x1)
                     lm.append(landmark[0, j * 2, c0[i], c1[i]] * s0 + y1)
+
                 lms.append(lm)
+                # TODO: why are there multiple landmarks per box?
+
             boxes = np.asarray(boxes, dtype=np.float32)
             lms = np.asarray(lms, dtype=np.float32)
-            keep = self.nms(boxes[:, :4], boxes[:, 4], 0.3)
+            keep = self.nms(
+                boxes[:, :4], boxes[:, 4], 0.3
+            )  # TODO: magic number, why isn't this smaller?
             boxes = boxes[keep, :]
             lms = lms[keep, :]
         return boxes, lms
 
     @staticmethod
     def nms(boxes, scores, nms_thresh):
+        """
+        boxes.shape (#, 4), [0] = number of boxes detected
+        scores, boxes + heatmap score (-1)
+        """
         x1 = boxes[:, 0]
         y1 = boxes[:, 1]
         x2 = boxes[:, 2]
         y2 = boxes[:, 3]
         areas = (x2 - x1) * (y2 - y1)
-        order = np.argsort(scores)[::-1]
+        order = np.argsort(scores)[::-1]  # sorted by highest heatmap score
+        # print(order)
         num_detections = boxes.shape[0]
         suppressed = np.zeros((num_detections,), dtype=np.uint8)
+
         for _i in range(num_detections):
+            """evaluate highest score first"""
             i = order[_i]
             if suppressed[i]:
                 continue
@@ -163,8 +246,10 @@ class CenterFace:
             iarea = areas[i]
 
             for _j in range(_i + 1, num_detections):
+                """compare to all lesser score boxes"""
                 j = order[_j]
                 if suppressed[j]:
+                    """skip if comparison has been suppressed"""
                     continue
 
                 xx1 = max(ix1, x1[j])
@@ -174,9 +259,13 @@ class CenterFace:
                 w = max(0, xx2 - xx1)
                 h = max(0, yy2 - yy1)
 
-                inter = w * h
+                inter = w * h  # intersection area
                 ovr = inter / (iarea + areas[j] - inter)
-                if ovr >= nms_thresh:
+                if ovr >= nms_thresh:  # suppress if overlap is too much
+                    # print("ovr", ovr)
                     suppressed[j] = True
         keep = np.nonzero(suppressed == 0)[0]
+
+        # if len(keep) != len(boxes):
+        #     print("Filtered some boxes", f"{len(boxes) - len(keep)} of {len(boxes)} ==> {len(keep)}")
         return keep
