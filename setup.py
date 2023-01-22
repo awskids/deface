@@ -6,8 +6,6 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name='deface',
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
     author='Martin Drawitsch',
     author_email='martin.drawitsch@gmail.com',
     description='Video anonymization by face detection',
