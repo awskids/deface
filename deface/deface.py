@@ -11,8 +11,9 @@ from typing import Dict, Tuple
 import tqdm
 import skimage.draw
 import numpy as np
-import imageio
+import imageio.v2 as imageio
 import imageio.plugins.ffmpeg
+import imageio.core
 import cv2
 
 from deface import __version__
@@ -23,6 +24,7 @@ from deface.centerface import CenterFace
 
 
 def scale_bb(x1, y1, x2, y2, mask_scale=1.0):
+    """scale bounding box based on mask scale (keep it locked at center)"""
     s = mask_scale - 1.0
     h, w = y2 - y1, x2 - x1
     y1 -= h * s
@@ -48,6 +50,7 @@ def draw_det(
 ):
     if replacewith == "solid":
         cv2.rectangle(frame, (x1, y1), (x2, y2), ovcolor, -1)
+
     elif replacewith == "blur":
         bf = 2  # blur factor (number of pixels in each dimension that the face will be reduced to)
         blurred_box = cv2.blur(
@@ -63,6 +66,7 @@ def draw_det(
             frame[y1:y2, x1:x2] = roibox
         else:
             frame[y1:y2, x1:x2] = blurred_box
+
     elif replacewith == "img":
         target_size = (x2 - x1, y2 - y1)
         resized_replaceimg = cv2.resize(replaceimg, target_size)
@@ -72,8 +76,10 @@ def draw_det(
             frame[y1:y2, x1:x2] = frame[y1:y2, x1:x2] * (
                 1 - resized_replaceimg[:, :, 3:] / 255
             ) + resized_replaceimg[:, :, :3] * (resized_replaceimg[:, :, 3:] / 255)
+
     elif replacewith == "none":
         pass
+
     if draw_scores:
         cv2.putText(
             frame,
@@ -90,6 +96,7 @@ def anonymize_frame(
 ):
     """
     frame is updated
+    use dets (detection boxes)
     """
     for i, det in enumerate(dets):
         boxes, score = det[:4], det[4]
@@ -183,12 +190,16 @@ def video_detect(
 
     read_frames = 0
     for frame in read_iter:
+        data: imageio.core.util.Array = frame
+        # print("Frame", type(data), data.shape)
         read_frames += 1
         if read_frames > 100:
+            print("Added a limitor of 100 frames", read_frames)
             break
 
         # Perform network inference, get bb dets but discard landmark predictions
-        # TODO: what are dets?
+        # dets = bounding boxes
+        # lms are dropped
         dets, _ = centerface(frame, threshold=threshold)
 
         anonymize_frame(

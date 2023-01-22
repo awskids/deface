@@ -88,7 +88,7 @@ class CenterFace:
                 "540": ["B", 10, "h", "w"],  # landmarks
             }
         )
-        print("updated input", input_dims["input.1"])
+        # print("updated input", input_dims["input.1"])
         dyn_model = update_inputs_outputs_dims(static_model, input_dims, output_dims)
         return dyn_model
 
@@ -141,6 +141,7 @@ class CenterFace:
         )
 
         if len(dets) > 0:
+            # if have detections then scale the data
             dets[:, 0:4:2], dets[:, 1:4:2] = (
                 dets[:, 0:4:2] / self.scale_w,
                 dets[:, 1:4:2] / self.scale_h,
@@ -206,6 +207,7 @@ class CenterFace:
                     lm.append(landmark[0, j * 2 + 1, c0[i], c1[i]] * s1 + x1)
                     lm.append(landmark[0, j * 2, c0[i], c1[i]] * s0 + y1)
 
+                # print("lm", lm)
                 lms.append(lm)
                 # TODO: why are there multiple landmarks per box?
 
@@ -221,8 +223,11 @@ class CenterFace:
     @staticmethod
     def nms(boxes, scores, nms_thresh):
         """
+        input:
         boxes.shape (#, 4), [0] = number of boxes detected
         scores, boxes + heatmap score (-1)
+
+        output: a filtered set of boxes with minimal overlap
         """
         x1 = boxes[:, 0]
         y1 = boxes[:, 1]

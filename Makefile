@@ -29,3 +29,20 @@ format:
 
 test:
 	PYTHONPATH=".:deface/:tests/" pytest -s -rPx tests/test_spike.py
+
+version := $(shell cat VERSION)
+
+latest-distro := dist/topicanalysis-$(version).tar.gz
+
+build-debug:
+	echo "Product Version $(version)"
+	echo "? $(latest-distro)"
+
+build:
+	rm -fr dist
+	python -m build
+
+build-latest:
+	rm -fr dist
+	python -m build -s
+	cp $(latest-distro) dist/topicanalysis-latest.tar.gz
