@@ -11,8 +11,4 @@ python-dotenv==0.19.2
 build==0.10.0
 pip_audit==2.4.13
 click>=8.0.1
-
-onnx
-onnxruntime
-pydot
-versioneer
+# versioneer

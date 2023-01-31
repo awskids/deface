@@ -24,7 +24,10 @@ setuptools.setup(
         'numpy',
         'tqdm',
         'scikit-image',
-        'opencv-python',
+        # 'opencv-python', breaks cv2 on ubuntu
+        'onnx',
+        'onnxruntime'
+
     ],
     extras_require={
         'gpu':  ['onnxruntime-gpu'],

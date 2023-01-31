@@ -100,6 +100,7 @@ class CenterFace:
         self.orig_shape = img.shape[:2]
         if self.in_shape is None:
             self.in_shape = self.orig_shape[::-1]
+
         if not hasattr(self, "h_new"):  # First call, need to compute sizes
             self.w_new, self.h_new, self.scale_w, self.scale_h = self.transform(
                 self.in_shape

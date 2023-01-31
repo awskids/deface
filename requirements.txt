@@ -4,3 +4,15 @@ numpy
 tqdm
 scikit-image
 opencv-python
+onnx
+onnxruntime
+tf2onnx
+pydot
+# keras==2.10.0
+# tensorflow==2.10.0
+keras==2.11.0
+tensorflow==2.11.0
+
+# tensorflow, keras, onnx have conflicting requirements on protobuf
+# onnx 1.13.0 requires protobuf<4,>=3.20.2, but you have protobuf 3.19.6 which is incompatible.
+protobuf==3.20.2

@@ -230,6 +230,33 @@ def video_detect(
     bar.close()
 
 
+def factory():
+    backend = "onnxrt"
+    centerface = CenterFace(in_shape=None, backend=backend)
+    return centerface
+
+
+def image_object_detect(
+    cv_image,
+    centerface
+):
+    frame = cv_image
+
+    backend = "onnxrt"
+    # centerface = CenterFace(in_shape=None, backend=backend)
+    dets, _ = centerface(frame, threshold=0.2)
+    anonymize_frame(
+        dets,
+        frame,
+        mask_scale=1.3,
+        replacewith="blur",
+        ellipse=True,
+        draw_scores=True,
+        replaceimg="../frigate-with-ai/debug/amsa-black.png",
+    )
+    return frame
+
+
 def image_detect(
     ipath: str,
     opath: str,

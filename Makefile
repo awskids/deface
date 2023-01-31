@@ -28,11 +28,12 @@ format:
 	black deface tests
 
 test:
-	PYTHONPATH=".:deface/:tests/" pytest -s -rPx tests/test_spike.py
+	@# PYTHONPATH=".:deface/:tests/" pytest -s -rPx tests/test_spike.py
+	@ PYTHONPATH=".:deface/:tests/" pytest -s -rPx tests/test_api.py	
 
 version := $(shell cat VERSION)
 
-latest-distro := dist/topicanalysis-$(version).tar.gz
+latest-distro := dist/deface-$(version).tar.gz
 
 build-debug:
 	echo "Product Version $(version)"
@@ -45,4 +46,4 @@ build:
 build-latest:
 	rm -fr dist
 	python -m build -s
-	cp $(latest-distro) dist/topicanalysis-latest.tar.gz
+	cp $(latest-distro) dist/deface-latest.tar.gz

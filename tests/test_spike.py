@@ -5,6 +5,9 @@ import onnx.parser
 import pytest
 
 from onnx import helper, shape_inference
+from deface.centerface import CenterFace
+
+from deface.deface import video_detect
 
 
 onnx_input_name = "input.1"
@@ -22,6 +25,27 @@ def MODEL(ONNX_PATH):
     return static_model
 
 
+@pytest.fixture
+def DYNAMIC_TF_MODEL():
+    from keras.layers import Conv2D, Flatten, Dense
+    from keras import Sequential
+
+    img_width, img_height, img_num_channels = 32, 32, 3
+    input_shape = (img_width, img_height, img_num_channels)
+    no_classes = 10
+
+    # Create the model
+    model = Sequential()
+    model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape))
+    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dense(no_classes, activation='softmax'))
+    return model
+
+
+# @pytest.mark.skip(reason="longer running")
 def test_review_model(MODEL):
     static_model = MODEL
     input_dims, output_dims = {}, {}
@@ -56,6 +80,7 @@ def test_review_model(MODEL):
     # lms (1, 10, 184, 320)
 
 
+# @pytest.mark.skip(reason="longer running")
 def test__review_diagram(MODEL):
     from onnx.tools.net_drawer import GetPydotGraph, GetOpNodeProducer
 
@@ -70,6 +95,17 @@ def test__review_diagram(MODEL):
     pydot_graph.write_dot("graph.dot")
 
 
-# def test__convert_onnx_to_tf():
-#     from onnx_tf.backend import prepare
-#     pass
+def test__convert_tf_to_onnx(DYNAMIC_TF_MODEL):
+    # from onnx_tf.backend import prepare
+
+    import tf2onnx
+    model = DYNAMIC_TF_MODEL
+
+    output_path="./tf_export.onnx"
+
+    model_proto, external_tensor_storage = tf2onnx.convert.from_keras(model,
+                    input_signature=None, opset=None, custom_ops=None,
+                    custom_op_handlers=None, custom_rewriter=None,
+                    inputs_as_nchw=None, outputs_as_nchw=None, extra_opset=None,
+                    shape_override=None, target=None, large_model=False, output_path=output_path)
+
